@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
-    "build:web": "esbuild web/main.js --bundle --format=iife --outfile=web/bundle.js && esbuild scripts/smoke.js --bundle --format=iife --outfile=web/smoke.bundle.js",
+    "build:web": "esbuild web/main.js --bundle --format=esm --external:./wasm/reactor_wasm.js --outfile=web/bundle.js && esbuild scripts/smoke.js --bundle --format=esm --external:./wasm/reactor_wasm.js --outfile=web/smoke.bundle.js",
     "dev": "npm run build:web && npm start",
     "gen:refs": "node scripts/gen_refs.js"
   },
@@ -15,6 +15,7 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0"
   }
 }

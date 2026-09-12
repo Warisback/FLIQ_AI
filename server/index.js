@@ -128,8 +128,12 @@ const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".css": "text/css", ".json": "application/json", ".webm": "video/webm",
   ".mp4": "video/mp4", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-  ".svg": "image/svg+xml", ".ico": "image/x-icon",
+  ".svg": "image/svg+xml", ".ico": "image/x-icon", ".wasm": "application/wasm",
 };
+
+// The SDK's wasm core is imported at runtime relative to the page bundle
+// (it can't be inlined by esbuild) — serve it from node_modules.
+const WASM_DIR = path.join(ROOT, "node_modules", "@reactor-team", "js-sdk", "dist", "wasm");
 
 function json(res, code, body) {
   const data = JSON.stringify(body);
@@ -229,6 +233,8 @@ const server = http.createServer(async (req, res) => {
 
     // --- static ---
     if (req.method === "GET" || req.method === "HEAD") {
+      const wasmMatch = p.match(/^\/wasm\/([A-Za-z0-9_.-]+)$/);
+      if (wasmMatch && serveFile(res, path.join(WASM_DIR, wasmMatch[1]), req.method)) return;
       const route = p === "/" ? "/index.html" : p;
       const safe = path.normalize(route).replace(/^([/\\]|\.\.)+/, "");
       for (const base of ["web", "assets"]) {

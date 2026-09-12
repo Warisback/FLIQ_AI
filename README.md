@@ -17,11 +17,31 @@ then say **"skip to dawn"** and see what your choice did.
 
 ```bash
 npm install
-cp .env.example .env    # fill in REACTOR_API_KEY and ANTHROPIC_API_KEY
-npm run dev             # bundles the web client, then serves http://localhost:3000
+cp .env.example .env    # fill in REACTOR_API_KEY and an LLM key (see below)
+npm run dev             # bundles the web client, then serves http://localhost:3001
 ```
 
+Port note: 3000 is squatted by a Codex runtime on the dev machine — we run on **3001**.
+
+Director LLM keys — first found wins: `ANTHROPIC_API_KEY` (structured outputs, strongest),
+then `DEEPSEEK_API_KEY` (deepseek-chat, JSON mode). `DIRECTOR_PROVIDER=mock` serves canned
+door-refusal beats with zero LLM credit — pipeline testing only, never in front of a judge.
+
 Use Chrome (Web Speech API for the mic; typed input always works as fallback).
+
+## Verified live (12 Sept, with the real Reactor key)
+
+- **Phase 0** ✅ token exchange mints a session-scoped JWT; session reaches `ready`; closes clean.
+- **Phase 1** ✅ smoke clip generated from our Dracula prompt in **~5.5s**, played at 1344×768
+  with live `main_video` + `main_audio` tracks. ⚠️ *Human ear still needed:* listen once and
+  tick the intelligibility box on `/smoke.html` to settle `DIALOGUE_IN_CLIP`.
+- **Phase 3 wiring** ✅ end-to-end in mock-Director mode: pick Mina → opening clip plays with
+  subtitle → typed turn → next clip chained via `continue_from_clip_id` (same room, same
+  character — the chaining really does hold continuity) → state panel shows deviations/flags.
+- **Cache parachute** ✅ each played clip auto-records to `cache/<hash>.webm` (~1.8MB per 8s).
+- **Phases 2 & 4 live** ⏳ wired and unit-shape-tested, blocked on LLM credit: the DeepSeek
+  account returns `402 Insufficient Balance` — top up at platform.deepseek.com, or set
+  `ANTHROPIC_API_KEY`. (The 402 proves auth + wiring are correct.)
 
 - **`/`** — the app. Pick a character, the opening beat plays, talk with the mic or the box.
 - **`/smoke.html`** — Phase 1 smoke test: connect → enqueue one Dracula clip with a spoken
@@ -44,9 +64,14 @@ docs, per §1 "verify against the live pages":
 | TTS API | Browser `speechSynthesis` | Zero keys, zero latency budget; only used if `DIALOGUE_IN_CLIP=false` |
 | Cache `<hash>.mp4` from generation | Browser records each played clip (MediaRecorder on the WebRTC stream) → `cache/<sha1(prompt)>.webm` | Clips arrive as live tracks, not files; recording playback is the simplest capture point. Alternative if MediaRecorder disappoints: the SDK's `requestRecording()` + `downloadClipAsFile()` (server-side HLS recorder → MP4 blob), which needs the model's recorder enabled |
 
-Director LLM: **`claude-haiku-4-5`** (plan §4 Phase 2: "fastest capable LLM"; turn target <4s).
-Override with `DIRECTOR_MODEL=claude-sonnet-5` in `.env` if turns need more brain and latency allows.
-System prompt is cached (`cache_control`) so repeat turns are fast and cheap.
+Director LLM: **`claude-haiku-4-5`** (plan §4 Phase 2: "fastest capable LLM"; turn target <4s)
+when an Anthropic key is present — structured outputs, cached system prompt. **`deepseek-chat`**
+otherwise (JSON mode + fence-strip + zod validation + retry-once). Override with `DIRECTOR_MODEL`.
+
+One packaging gotcha, already fixed: the Reactor SDK loads a wasm core at runtime relative to
+the bundle URL, so it can't be inlined — the bundle is ESM with `./wasm/reactor_wasm.js` left
+external, and the server maps `/wasm/*` to the SDK's `dist/wasm/`. If you ever see
+"reactor-wasm failed to load", the bundle format or that route regressed.
 
 **Speculative branching** (Phase 4): every Director turn returns ≤2 predicted branches; the
 browser enqueues their clips behind the main clip (`continue_from_clip_id`). The next player
