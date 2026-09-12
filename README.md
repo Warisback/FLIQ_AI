@@ -23,7 +23,11 @@ npm run dev             # bundles the web client, then serves http://localhost:3
 
 Use Chrome (Web Speech API for the mic; typed input always works as fallback).
 
-- **`/`** — the app. Pick a character, the opening beat plays, talk with the mic or the box.
+- **`/`** — cinematic landing page with the parallax movie wall and hackathon partners.
+- **`/casting.html`** — choose Mina or Jonathan.
+- **`/play.html?character=mina`** — the live demo. The opening beat plays; talk with the mic
+  or the box. Operator tools are under **Session controls**. See [FRONTEND.md](FRONTEND.md)
+  for integration details and the current Jonathan-opening limitation.
 - **`/smoke.html`** — Phase 1 smoke test: connect → enqueue one Dracula clip with a spoken
   line → play. Logs every Reactor event with timestamps. Human verdict checkboxes on the page
   decide `DIALOGUE_IN_CLIP` (if the spoken line is unintelligible, set it to `false` in `.env`
