@@ -5,7 +5,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadStoryPack, initialState, applyPatch, pushTranscript } from "./state.js";
+import { loadStoryPack, initialState, entryFor, applyPatch, pushTranscript } from "./state.js";
 import { CACHE_DIR, clipHash, clipPath, hasClip, saveClipMeta, listClips } from "./cache.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -192,14 +192,15 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/reset" && req.method === "POST") {
       const body = await readJson(req);
       state = initialState(storyPack, body.player_character);
+      const entry = entryFor(storyPack, state.player_character);
       console.log(`[reset] player_character=${state.player_character}`);
       return json(res, 200, {
         ok: true,
         opening: {
-          npc_line: storyPack.entry.opening_npc_line,
-          npc_speaker: storyPack.entry.opening_npc_speaker,
-          clip_prompt: storyPack.entry.opening_clip_prompt,
-          clip_hash: clipHash(storyPack.entry.opening_clip_prompt),
+          npc_line: entry.opening_npc_line,
+          npc_speaker: entry.opening_npc_speaker,
+          clip_prompt: entry.opening_clip_prompt,
+          clip_hash: clipHash(entry.opening_clip_prompt),
         },
       });
     }

@@ -29,6 +29,23 @@ door-refusal beats with zero LLM credit — pipeline testing only, never in fron
 
 Use Chrome (Web Speech API for the mic; typed input always works as fallback).
 
+## Frontend (GPT's cinematic UI, merged 12 Sept ~14:30)
+
+The UI is the Codex-built cinematic frontend, copied byte-identical from
+`Documents\ChatGPT\FLIQ_AI\web` (its FRONTEND.md documents it; built on our f8c0712):
+
+- **`/`** — scroll-parallax landing (film wall, partner strip)
+- **`/casting.html`** — Mina / Jonathan character cards
+- **`/play.html?character=mina`** — the live scene (the old one-page app moved here)
+- **`/smoke.html`** — unchanged Phase 1 smoke test
+
+Exactly one byte changed in its files: `play.html`'s bundle script tag gained
+`type="module"` (required by the wasm fix — invisible). `web/main.js` is GPT's adapted
+client, rebuilt with our esbuild flags. Backend addition it requested: per-character
+openings (`entries` in story/dracula.json) so Jonathan gets his own opening beat at the
+asylum instead of Mina's. Full flow re-verified headless: landing → casting → play →
+opening clip → suggested-line turn → chained clip → impact panel → clean disconnect.
+
 ## Verified live (12 Sept, with the real Reactor key)
 
 - **Phase 0** ✅ token exchange mints a session-scoped JWT; session reaches `ready`; closes clean.
