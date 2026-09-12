@@ -1,9 +1,34 @@
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const menuToggle = document.querySelector(".menu-toggle");
+const landingMenu = document.getElementById("landing-menu");
+if (menuToggle && landingMenu) {
+  const closeMenu = () => {
+    menuToggle.setAttribute("aria-expanded", "false");
+    landingMenu.hidden = true;
+  };
+  menuToggle.addEventListener("click", () => {
+    const open = menuToggle.getAttribute("aria-expanded") !== "true";
+    menuToggle.setAttribute("aria-expanded", String(open));
+    landingMenu.hidden = !open;
+  });
+  landingMenu.addEventListener("click", (event) => {
+    if (event.target.closest("a")) closeMenu();
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".floating-header")) closeMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !landingMenu.hidden) {
+      closeMenu();
+      menuToggle.focus();
+    }
+  });
+}
 const tiles = [...document.querySelectorAll("[data-depth]")];
 if (tiles.length && !reduceMotion) {
   let scheduled = false;
   function renderWall() {
-    const y = Math.min(scrollY, innerHeight * 1.8);
+    const y = Math.min(scrollY, innerHeight * 0.22);
     for (const tile of tiles)
       tile.style.setProperty("--drift", `${y * Number(tile.dataset.depth)}px`);
     scheduled = false;
