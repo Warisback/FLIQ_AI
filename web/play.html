@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Your scene — UNDERSTUDY</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/site.css" />
+    <link rel="stylesheet" href="/play.css" />
+  </head>
+  <body class="play-page">
+    <header class="site-header">
+      <a class="brand" href="/"
+        ><img
+          src="/media/understudy-mark.png"
+          width="36"
+          height="36"
+          alt=""
+        />understudy<span class="brand-star">✳</span></a
+      >
+      <div class="session-status">
+        <span class="dot disconnected" id="status-dot"></span
+        ><span id="status-text" role="status">disconnected</span
+        ><span class="badge" id="demo-badge" hidden>Cached demo</span>
+      </div>
+      <a href="/casting.html" class="text-link">← Change character</a>
+    </header>
+    <main class="theatre">
+      <div class="theatre-heading">
+        <div>
+          <p class="eyebrow">NOW PLAYING / AN INTERACTIVE RETELLING</p>
+          <h1>Dracula <span>1897</span></h1>
+        </div>
+        <div class="character-indicator">
+          <span class="eyebrow">YOUR CHARACTER</span
+          ><strong id="player-name">Mina Harker</strong>
+        </div>
+      </div>
+      <div id="picker" hidden>
+        <a class="button dark" href="/casting.html">Choose your character ↗</a>
+      </div>
+      <div class="theatre-layout">
+        <section class="scene-column" aria-label="Your scene">
+          <div id="stage">
+            <img
+              class="stage-art"
+              src="/media/castle-hall.png"
+              alt="Atmospheric castle artwork displayed while the live scene loads"
+            /><video
+              id="live-video"
+              autoplay
+              playsinline
+              aria-label="Live generated scene"
+            ></video
+            ><video
+              id="cached-video"
+              playsinline
+              aria-label="Cached scene"
+            ></video>
+            <div class="stage-topline">
+              <span class="glass-tag" id="scene-time"
+                >LONDON · AFTER MIDNIGHT</span
+              ><button id="fullscreen" aria-label="Expand scene to fullscreen">
+                ⛶
+              </button>
+            </div>
+            <div class="still-label" id="still-label">
+              SCENE ARTWORK · WAITING FOR VIDEO
+            </div>
+            <div id="subtitle" aria-live="polite"></div>
+          </div>
+          <div id="stage-note" role="status" aria-live="polite">
+            Preparing your opening scene…
+          </div>
+          <div class="input-heading">
+            <span class="eyebrow">YOUR NEXT LINE</span
+            ><span id="input-hint"
+              >Speak freely. There is no wrong answer.</span
+            >
+          </div>
+          <div id="controls">
+            <button
+              id="mic"
+              aria-label="Start microphone"
+              title="Speak your next line"
+            >
+              <svg
+                width="19"
+                height="23"
+                viewBox="0 0 24 28"
+                fill="none"
+                aria-hidden="true"
+              >
+                <rect
+                  x="8"
+                  y="2"
+                  width="8"
+                  height="15"
+                  rx="4"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                />
+                <path
+                  d="M4 12v2a8 8 0 0 0 16 0v-2M12 22v4M8 26h8"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                />
+              </svg></button
+            ><label class="sr-only" for="typed">Your next line</label
+            ><input
+              id="typed"
+              placeholder="What do you say?"
+              autocomplete="off"
+              maxlength="2000"
+            /><button id="send">Say it <span>↗</span></button>
+          </div>
+          <div class="suggestions" aria-label="Suggested lines">
+            <span>TRY SAYING</span
+            ><button data-line="I won't open the door.">
+              “I won’t open the door.”</button
+            ><button data-line="I need to tell you about my dreams.">
+              “I need to tell you about my dreams.”
+            </button>
+          </div>
+          <div class="time-jump">
+            <div>
+              <span class="sun-icon">☼</span>
+              <p>
+                Curious what your choice changed?<small
+                  >Move the story forward and face the consequences.</small
+                >
+              </p>
+            </div>
+            <button id="skip">Skip to dawn <span>↗</span></button>
+          </div>
+        </section>
+        <aside class="story-sidebar">
+          <div class="panel transcript-panel">
+            <div class="panel-heading">
+              <h2>The conversation</h2>
+              <span class="eyebrow">LIVE SCRIPT</span>
+            </div>
+            <div id="transcript" role="log" aria-live="polite">
+              <p class="transcript-empty">
+                The scene is set.<br />The next line is yours.
+              </p>
+            </div>
+          </div>
+          <button id="btn-state" aria-expanded="false">
+            The story remembers <span>+</span>
+          </button>
+          <div class="panel" id="state-panel">
+            <h2>Your impact</h2>
+            <p id="impact-summary">Your choices will appear here.</p>
+            <pre id="state-json"></pre>
+          </div>
+          <div class="sidebar-note">
+            <span>✳</span>
+            <p>
+              You don’t have to follow the plot.<br />The characters will
+              remember.
+            </p>
+          </div>
+        </aside>
+      </div>
+      <details class="operator-panel">
+        <summary>Session controls <span>FOR THE DEMO OPERATOR</span></summary>
+        <div class="operator-controls">
+          <button id="btn-connect">Connect live</button
+          ><button id="btn-disconnect" disabled>Close session</button
+          ><button id="btn-pregen">Pre-generate forks</button
+          ><button id="restart-scene">Restart scene</button>
+        </div>
+        <div id="log-panel">
+          <h2>Session events</h2>
+          <pre id="log"></pre>
+        </div>
+      </details>
+    </main>
+    <footer>
+      <span>UNDERSTUDY / DRACULA</span
+      ><span>Your voice. Your choices. Your ending.</span
+      ><a href="/">Leave the theatre ↗</a>
+    </footer>
+    <script type="module" src="/bundle.js"></script>
+  </body>
+</html>

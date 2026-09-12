@@ -11,8 +11,14 @@ export function loadStoryPack() {
   return JSON.parse(fs.readFileSync(STORY_PATH, "utf8"));
 }
 
+// Per-character entry points (GPT frontend handoff: Jonathan needs his own
+// opening); falls back to the shared entry for unknown characters.
+export function entryFor(storyPack, playerCharacter) {
+  return storyPack.entries?.[playerCharacter] || storyPack.entry;
+}
+
 export function initialState(storyPack, playerCharacter) {
-  const entry = storyPack.entry;
+  const entry = entryFor(storyPack, playerCharacter);
   const characters = {};
   for (const [id, c] of Object.entries(storyPack.characters)) {
     characters[id] = {
@@ -22,9 +28,12 @@ export function initialState(storyPack, playerCharacter) {
       disposition_to_player: c.disposition_to_player,
     };
   }
+  for (const [id, override] of Object.entries(entry.character_overrides || {})) {
+    if (characters[id]) Object.assign(characters[id], override);
+  }
   return {
     story: "dracula",
-    player_character: playerCharacter || entry.player_character,
+    player_character: entry.player_character,
     time: entry.time,
     location: entry.location,
     beat_index: entry.beat_index,
