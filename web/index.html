@@ -10,27 +10,37 @@
     />
     <link rel="icon" href="/favicon.svg" />
     <link rel="stylesheet" href="/site.css" />
+    <link rel="stylesheet" href="/landing.css" />
     <script src="/site.js" defer></script>
   </head>
   <body class="landing">
     <a class="skip-link" href="#main">Skip to content</a>
-    <header class="site-header">
-      <a class="brand" href="/" aria-label="Understudy home"
-        ><img
-          src="/media/understudy-mark.png"
-          alt=""
-          width="36"
-          height="36"
-        />understudy<span class="brand-star">✳</span></a
+    <header class="floating-header">
+      <a class="nav-mark" href="/" aria-label="Understudy home"
+        ><img src="/media/understudy-mark.png" alt="" width="38" height="38"
+      /></a>
+      <div class="nav-capsule">
+        <button
+          class="menu-toggle"
+          aria-expanded="false"
+          aria-controls="landing-menu"
+        >
+          <span class="menu-lines" aria-hidden="true"><i></i><i></i></span>Menu
+        </button>
+        <a class="nav-enter" href="/casting.html"
+          >Step inside <span aria-hidden="true">↗</span></a
+        >
+      </div>
+      <nav
+        id="landing-menu"
+        class="landing-menu"
+        aria-label="Main navigation"
+        hidden
       >
-      <nav aria-label="Main navigation">
-        <a href="#stories">The experience</a
-        ><a href="#how-it-works">How it works</a
-        ><a href="#partners">Partners</a>
+        <a href="#stories">The experience <span>01</span></a>
+        <a href="#how-it-works">How it works <span>02</span></a>
+        <a href="#partners">Partners <span>03</span></a>
       </nav>
-      <a class="button small dark" href="/casting.html"
-        >Step inside <span>↗</span></a
-      >
     </header>
     <main id="main">
       <section class="parallax-section" aria-labelledby="hero-title">
@@ -41,7 +51,7 @@
               <div class="film-image frame-0"></div>
               <span>TRANSYLVANIA · 1897</span>
             </div>
-            <div class="film-tile tile-two" data-depth=".32">
+            <div class="film-tile tile-two" data-depth="-.04">
               <div class="film-image frame-1"></div>
               <span>MINA HARKER</span>
             </div>
@@ -63,17 +73,13 @@
             </div>
           </div>
           <div class="hero-copy">
-            <p class="eyebrow">
-              <span class="live-dot"></span> A NEW WAY TO EXPERIENCE CINEMA
-            </p>
             <h1 id="hero-title">
               You know the story.<br /><span class="gradient-text"
                 >Now break it.</span
               >
             </h1>
             <p class="hero-description">
-              Step into the scene. Speak as the character.<br />See what happens
-              when the next line is yours.
+              Step into the scene. Make the next line yours.
             </p>
             <div class="hero-actions">
               <a class="button dark" href="/casting.html"
@@ -82,21 +88,15 @@
                 ><span class="play-icon">▷</span> See how it works</a
               >
             </div>
-            <p class="hero-footnote">
-              ONE STORY. YOUR VOICE. A DIFFERENT ENDING.
-            </p>
           </div>
-          <a class="scroll-cue" href="#partners"
-            ><span>SCROLL TO CHANGE THE PICTURE</span><span>↓</span></a
+          <a class="scroll-cue" href="#partners" aria-label="Scroll to partners"
+            ><span aria-hidden="true">↓</span></a
           >
           <div class="frame-corner left"></div>
           <div class="frame-corner right"></div>
         </div>
       </section>
       <section class="partners" id="partners" aria-label="Hackathon partners">
-        <div class="partner-caption">
-          BUILT AT WORLDS LONDON <span>WITH THE HACKATHON PARTNERS</span>
-        </div>
         <div class="partner-logos">
           <a
             class="reactor-logo"
