@@ -48,6 +48,15 @@ let recorder = null,
   recordingHash = null,
   recordingChunks = [];
 let idleTimer = null;
+let clipPlaying = false;
+
+// The stage shows exactly one thing: a cached clip, a live clip, or the
+// scene artwork. Never the live stream's black between-clips frames.
+function updateStage() {
+  const cachedShowing = ui.cachedVideo.style.display === "block";
+  ui.liveVideo.style.visibility = clipPlaying && !cachedShowing ? "visible" : "hidden";
+  $("still-label").hidden = clipPlaying || cachedShowing;
+}
 let busy = false;
 let connectingPromise = null;
 let selectedCharacter = new URLSearchParams(location.search).get("character");
@@ -97,9 +106,8 @@ async function openSession() {
     log(`trackReceived: ${name} (${track.kind})`);
     mediaStream.addTrack(track);
     ui.liveVideo.srcObject = mediaStream;
-    ui.liveVideo.onplaying = () => {
-      $("still-label").hidden = true;
-    };
+    // The live stream sends black frames BETWEEN clips — the stage artwork
+    // stays up except while a clip is actually playing (see updateStage).
     ui.liveVideo.play().catch(() => note("click the video to start playback"));
   });
   reactor.on("message", (msg) => {
@@ -114,10 +122,16 @@ async function openSession() {
     if (type === "clip_started" && data?.clip?.clip_id) {
       lastPlayedClipId = data.clip.clip_id;
       startRecording(data.clip.clip_id);
+      clipPlaying = true;
+      updateStage();
     }
     // Clips flowing = the demo is in active use; don't idle-close mid-scene.
     if (type === "clip_queued" || type === "clip_generated" || type === "clip_started") touchIdle();
-    if (type === "clip_finished" || type === "clip_stopped") stopRecording();
+    if (type === "clip_finished" || type === "clip_stopped") {
+      stopRecording();
+      clipPlaying = false;
+      updateStage();
+    }
     if (type === "clip_failed" && data?.clip?.clip_id) {
       log(`CLIP FAILED: ${data.clip.clip_id}`);
       generatedWaiters.get(data.clip.clip_id)?.("failed");
@@ -160,7 +174,8 @@ async function disconnect() {
   generatedWaiters.clear();
   clipHashById.clear();
   clipPromptById.clear();
-  $("still-label").hidden = false;
+  clipPlaying = false;
+  updateStage();
   setStatus("disconnected");
   ui.connect.disabled = false;
   ui.disconnect.disabled = true;
@@ -248,9 +263,9 @@ async function cacheHas(hash) {
 function playCached(hash, npcLine) {
   ui.cachedVideo.src = `/api/cache/${hash}`;
   ui.cachedVideo.style.display = "block";
-  $("still-label").hidden = true;
   ui.cachedVideo.onended = hideCached;
   ui.cachedVideo.play().catch(() => note("click the video to play"));
+  updateStage();
   note("replaying from cache");
   log(`cache replay ${hash.slice(0, 8)}…`);
 }
@@ -258,7 +273,7 @@ function playCached(hash, npcLine) {
 function hideCached() {
   ui.cachedVideo.style.display = "none";
   ui.cachedVideo.pause();
-  $("still-label").hidden = !!ui.liveVideo.srcObject;
+  updateStage();
   note("");
 }
 
@@ -337,25 +352,41 @@ async function runBeat(beat, { chain = true } = {}) {
     return note("not connected — no live generation and no cached clip");
   }
 
-  const clipId = await enqueueClip(beat.clip_prompt, {
+  let clipId = await enqueueClip(beat.clip_prompt, {
     continueFrom: chain ? lastPlayedClipId : null,
     hash: beat.clip_hash,
   });
   if (!clipId) return;
 
-  // Speculative branches ride behind the main clip.
-  await enqueueBranches(beat.branches || [], clipId);
+  // Speculative branches ride behind the main clip. They multiply generation
+  // load — the server can turn them off (SPECULATE=false) when the venue is slow.
+  if (config.speculate !== false) await enqueueBranches(beat.branches || [], clipId);
 
-  try {
-    note("the world is forming…");
-    await waitGenerated(clipId);
-    if (token !== currentTurnToken) return; // player already moved on
-    note("");
-    await playClip(clipId);
-  } catch (err) {
-    log(`live clip lost (${err.message}) — trying cache`);
-    if (await cacheHas(beat.clip_hash)) playCached(beat.clip_hash);
-    else note("clip lost to the night — say something else");
+  // Under event load generation can take a minute-plus. The subtitle is already
+  // up and the artwork holds the stage, so wait long and retry a failed clip once.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      note("the world is forming…");
+      await waitGenerated(clipId, 120000);
+      if (token !== currentTurnToken) return; // player already moved on
+      note("");
+      await playClip(clipId);
+      return;
+    } catch (err) {
+      if (token !== currentTurnToken) return;
+      if (err.message === "clip_failed" && attempt === 1) {
+        log("clip failed — re-enqueueing once");
+        clipId = await enqueueClip(beat.clip_prompt, {
+          continueFrom: chain ? lastPlayedClipId : null,
+          hash: beat.clip_hash,
+        });
+        if (clipId) continue;
+      }
+      log(`live clip lost (${err.message}) — trying cache`);
+      if (await cacheHas(beat.clip_hash)) playCached(beat.clip_hash);
+      else note("the vision escaped us — say something else");
+      return;
+    }
   }
 }
 
