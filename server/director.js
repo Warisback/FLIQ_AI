@@ -201,12 +201,12 @@ function normalizeTurn(out) {
 // budget brings turns under the plan's 4s target. If the model rejects the
 // field, we drop it for the rest of the process and eat the latency.
 let geminiThinkingOff = true;
-async function geminiJson(userMessage, maxTokens, systemText) {
+async function geminiJson(userMessage, maxTokens, systemText, model = MODEL) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
   try {
     const request = () => fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       {
         method: "POST",
         headers: {
@@ -237,6 +237,20 @@ async function geminiJson(userMessage, maxTokens, systemText) {
         res = await request();
       } else {
         throw new Error(`Gemini 400: ${text.slice(0, 300)}`);
+      }
+    }
+    if (res.status === 429) {
+      // Free tier is per-minute limited. If Google says the window clears
+      // soon, wait it out once instead of surfacing an error mid-demo.
+      const text = await res.text();
+      const delay = Number(text.match(/retryDelay[^\d]*(\d+)/)?.[1] ?? NaN);
+      if (delay > 0 && delay <= 15) {
+        console.error(`[director] gemini 429 — retrying in ${delay + 1}s`);
+        await new Promise((r) => setTimeout(r, (delay + 1) * 1000));
+        res = await request();
+      }
+      if (!res.ok) {
+        throw new Error("The Director is rate-limited — give it a minute, then try again. (Gemini free-tier per-minute quota)");
       }
     }
     if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -334,7 +348,9 @@ export async function matchBranch(playerLine, branches) {
   let idx;
   if (PROVIDER === "gemini") {
     try {
-      const out = await geminiJson(prompt, 1500, "You match player lines to predicted moves. Answer with JSON only.");
+      // flash-lite: faster than the main model and bills a separate per-minute
+      // quota bucket, so branch matching never starves story turns.
+      const out = await geminiJson(prompt, 1500, "You match player lines to predicted moves. Answer with JSON only.", "gemini-3.5-flash-lite");
       idx = out.match_index;
     } catch (err) {
       console.error(`[branch-match] gemini failed: ${err.message}`);
