@@ -201,7 +201,15 @@ function normalizeTurn(out) {
 // budget brings turns under the plan's 4s target. If the model rejects the
 // field, we drop it for the rest of the process and eat the latency.
 let geminiThinkingOff = true;
+
+// Free-tier quotas are per key per minute. Round-robin every call across all
+// configured keys, and on a 429 hop to the next key before waiting anything out.
+const GEMINI_KEYS = [process.env.GEMINI_API_KEY, process.env.GEMINI_API_KEY_2]
+  .filter(Boolean);
+let geminiKeyIdx = 0;
+
 async function geminiJson(userMessage, maxTokens, systemText, model = MODEL) {
+  geminiKeyIdx++;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
   try {
@@ -210,7 +218,7 @@ async function geminiJson(userMessage, maxTokens, systemText, model = MODEL) {
       {
         method: "POST",
         headers: {
-          "x-goog-api-key": process.env.GEMINI_API_KEY,
+          "x-goog-api-key": GEMINI_KEYS[geminiKeyIdx % GEMINI_KEYS.length],
           "Content-Type": "application/json",
         },
         signal: controller.signal,
@@ -238,6 +246,12 @@ async function geminiJson(userMessage, maxTokens, systemText, model = MODEL) {
       } else {
         throw new Error(`Gemini 400: ${text.slice(0, 300)}`);
       }
+    }
+    if (res.status === 429 && GEMINI_KEYS.length > 1) {
+      // Hop to the other key first — its per-minute window is independent.
+      geminiKeyIdx++;
+      console.error(`[director] gemini 429 — rotating to key ${(geminiKeyIdx % GEMINI_KEYS.length) + 1}`);
+      res = await request();
     }
     if (res.status === 429) {
       // Free tier is per-minute limited. If Google says the window clears
