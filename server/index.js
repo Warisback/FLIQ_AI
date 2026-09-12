@@ -181,7 +181,13 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { jwt: tok.jwt, expires_at: tok.expires_at, model: MODEL_SLUG });
     }
     if (p === "/api/config" && req.method === "GET") {
-      return json(res, 200, { model: MODEL_SLUG, dialogueInClip: DIALOGUE_IN_CLIP, demoMode: DEMO_MODE });
+      return json(res, 200, {
+        model: MODEL_SLUG,
+        dialogueInClip: DIALOGUE_IN_CLIP,
+        demoMode: DEMO_MODE,
+        // SPECULATE=false lightens FastH3 load when the venue is slammed
+        speculate: process.env.SPECULATE !== "false",
+      });
     }
     if (p === "/api/state" && req.method === "GET") {
       return json(res, 200, state);
