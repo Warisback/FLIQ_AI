@@ -115,6 +115,8 @@ async function openSession() {
       lastPlayedClipId = data.clip.clip_id;
       startRecording(data.clip.clip_id);
     }
+    // Clips flowing = the demo is in active use; don't idle-close mid-scene.
+    if (type === "clip_queued" || type === "clip_generated" || type === "clip_started") touchIdle();
     if (type === "clip_finished" || type === "clip_stopped") stopRecording();
     if (type === "clip_failed" && data?.clip?.clip_id) {
       log(`CLIP FAILED: ${data.clip.clip_id}`);
@@ -170,18 +172,20 @@ function setStatus(status) {
   ui.statusText.textContent = status;
 }
 
-// Billing is per second of open session: auto-close after 3 idle minutes.
+// Billing is per second of open session: auto-close after 10 idle minutes.
+// (Was 3 — it kept cutting the demo off mid-conversation. Reconnection is
+// automatic on the next line, see runBeat.)
 function touchIdle() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(
     () => {
       if (reactor) {
-        log("idle 3 min — closing session to stop the meter");
+        log("idle 10 min — closing session to stop the meter");
         disconnect();
-        note("session closed (idle) — Connect to resume");
+        note("Session rested while you were away — it reconnects on your next line.");
       }
     },
-    3 * 60 * 1000,
+    10 * 60 * 1000,
   );
 }
 
@@ -323,6 +327,11 @@ async function runBeat(beat, { chain = true } = {}) {
   if (config.demoMode && (await cacheHas(beat.clip_hash)))
     return playCached(beat.clip_hash);
 
+  // Dropped or idle-closed session? Reconnect in place — the show goes on.
+  if (!reactor && !config.demoMode) {
+    log("no session — reconnecting");
+    await connect().catch((e) => log(`reconnect failed: ${e.message}`));
+  }
   if (!reactor) {
     if (await cacheHas(beat.clip_hash)) return playCached(beat.clip_hash);
     return note("not connected — no live generation and no cached clip");
