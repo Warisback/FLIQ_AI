@@ -8,3 +8,5 @@ assets/refs/*.png
 *.log
 server.err
 server.log
+.reference/
+.work-tools/
