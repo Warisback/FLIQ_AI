@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNDERSTUDY — step into the story</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0c0a10; color: #e8e2d8; font: 14px/1.45 Georgia, "Times New Roman", serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #2a2333; }
+  header h1 { font-size: 18px; letter-spacing: 4px; margin: 0; color: #c9a86a; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; }
+  .dot.ready { background: #4caf50; } .dot.connecting, .dot.waiting { background: #e6a23c; } .dot.disconnected { background: #b04343; }
+  #status-text { color: #9a8fb0; font-size: 13px; }
+  .spacer { flex: 1; }
+  button { background: #221b2e; color: #e8e2d8; border: 1px solid #45385c; border-radius: 6px; padding: 7px 14px; font: inherit; cursor: pointer; }
+  button:hover { background: #2e2440; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: #5a2430; border-color: #8a3a4a; }
+  button.primary:hover { background: #6e2c3b; }
+  main { display: grid; grid-template-columns: 1fr 320px; gap: 14px; padding: 14px 16px; max-width: 1400px; margin: 0 auto; }
+  #stage { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16/9; }
+  #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #cached-video { display: none; z-index: 2; }
+  #subtitle { position: absolute; z-index: 3; left: 0; right: 0; bottom: 8%; text-align: center; padding: 0 10%;
+    font-size: 22px; text-shadow: 0 2px 6px #000, 0 0 20px #000; color: #f3ead9; font-style: italic; }
+  #subtitle .speaker { color: #c9a86a; font-style: normal; font-variant: small-caps; margin-right: 8px; }
+  #stage-note { position: absolute; z-index: 3; top: 10px; left: 12px; font-size: 12px; color: #9a8fb0; text-shadow: 0 1px 4px #000; }
+  #controls { grid-column: 1; display: flex; gap: 10px; align-items: center; }
+  #mic { width: 52px; height: 52px; border-radius: 50%; font-size: 22px; }
+  #mic.listening { background: #7a2020; border-color: #c05050; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(192,80,80,.25); } }
+  #typed { flex: 1; background: #17121f; color: inherit; border: 1px solid #45385c; border-radius: 6px; padding: 10px 12px; font: inherit; }
+  #skip { font-variant: small-caps; letter-spacing: 1px; }
+  aside { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .panel { background: #17121f; border: 1px solid #2a2333; border-radius: 10px; padding: 10px 12px; }
+  .panel h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: 2px; color: #9a8fb0; font-variant: small-caps; }
+  #transcript { height: 300px; overflow-y: auto; font-size: 13px; }
+  #transcript div { margin-bottom: 6px; }
+  #transcript .who { color: #c9a86a; font-variant: small-caps; }
+  #state-panel { display: none; }
+  #state-json { white-space: pre-wrap; font: 11px/1.4 Consolas, monospace; color: #9fd49f; max-height: 260px; overflow-y: auto; margin: 0; }
+  #log-panel { grid-column: 1 / -1; }
+  #log { height: 110px; overflow-y: auto; font: 11px/1.5 Consolas, monospace; color: #7d95b3; white-space: pre-wrap; margin: 0; }
+  #picker { position: fixed; inset: 0; z-index: 10; background: rgba(8,6,12,.92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+  #picker h2 { font-size: 26px; color: #c9a86a; letter-spacing: 2px; margin: 0; }
+  #picker .cards { display: flex; gap: 16px; }
+  #picker .card { width: 220px; padding: 22px; text-align: center; background: #17121f; border: 1px solid #45385c; border-radius: 12px; cursor: pointer; }
+  #picker .card:hover { border-color: #c9a86a; }
+  #picker .card b { display: block; font-size: 19px; color: #e8e2d8; margin-bottom: 6px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #3a2a1a; color: #e0b060; }
+</style>
+</head>
+<body>
+  <div id="picker">
+    <h2>UNDERSTUDY</h2>
+    <p style="color:#9a8fb0">London, 1897. Pick who you want to be.</p>
+    <div class="cards">
+      <div class="card" data-character="mina"><b>Mina Harker</b>It is past midnight. Someone is knocking at your door.</div>
+      <div class="card" data-character="jonathan"><b>Jonathan Harker</b>You have seen the Count's true face, and no one believes you.</div>
+    </div>
+  </div>
+
+  <header>
+    <h1>UNDERSTUDY</h1>
+    <span class="dot disconnected" id="status-dot"></span>
+    <span id="status-text">disconnected</span>
+    <span class="badge" id="demo-badge" hidden>demo mode</span>
+    <span class="spacer"></span>
+    <button id="btn-state">Story state</button>
+    <button id="btn-pregen" title="Pre-generate + cache the opening and the three forks">Pre-generate forks</button>
+    <button id="btn-connect" class="primary">Connect</button>
+    <button id="btn-disconnect" disabled>Close session</button>
+  </header>
+
+  <main>
+    <div id="stage">
+      <video id="live-video" autoplay playsinline></video>
+      <video id="cached-video" playsinline></video>
+      <div id="stage-note"></div>
+      <div id="subtitle"></div>
+    </div>
+
+    <aside>
+      <div class="panel"><h2>Transcript</h2><div id="transcript"></div></div>
+      <div class="panel" id="state-panel"><h2>The story remembers</h2><pre id="state-json"></pre></div>
+    </aside>
+
+    <div id="controls">
+      <button id="mic" title="Speak">🎙</button>
+      <input id="typed" placeholder="…or type what you say, and press Enter" autocomplete="off">
+      <button id="send">Say it</button>
+      <button id="skip" class="primary">Skip to dawn</button>
+    </div>
+
+    <div class="panel" id="log-panel"><h2>Reactor events</h2><pre id="log"></pre></div>
+  </main>
+
+  <script src="/bundle.js"></script>
+</body>
+</html>

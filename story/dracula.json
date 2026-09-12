@@ -1,0 +1,60 @@
+{
+  "story": "dracula",
+  "source": "Bram Stoker, Dracula, 1897 (public domain). Summarised in our own words.",
+  "player_characters": ["mina", "jonathan"],
+  "canon_beats": [
+    "Jonathan arrives at Castle Dracula and is received by the Count.",
+    "Jonathan realises he is a prisoner; escapes.",
+    "Lucy sickens in Whitby; Van Helsing is called in.",
+    "Lucy dies and returns; the men destroy the vampire she has become.",
+    "Dracula turns his attention to Mina; she is bitten and bound to him.",
+    "The hunters pursue Dracula back to Transylvania and destroy him at sunset."
+  ],
+  "entry": {
+    "player_character": "mina",
+    "time": "night, just past midnight",
+    "location": "harker_room",
+    "beat_index": 4,
+    "opening_npc_speaker": "van_helsing",
+    "opening_npc_line": "Madam Mina, it is Van Helsing. Will you let me in? I bring garlic and a crucifix for your protection.",
+    "opening_clip_prompt": "First-person POV of a young woman sitting up in a canopied bed in a Victorian bedroom, 1897: dark oak panelling, a single candle guttering on the nightstand, moonlight through lace curtains, a heavy locked door. Three firm knocks shake the door. Slow push-in toward the door. An older man's voice, muffled through the wood, S1: \"Madam Mina, it is Van Helsing. Will you let me in? I bring garlic and a crucifix for your protection.\" Candle flame crackles, wind rattles the window, floorboards creak beyond the door."
+  },
+  "characters": {
+    "mina": { "alive": true, "location": "harker_room", "knows": ["lucy is dead", "strange dreams trouble her sleep"], "disposition_to_player": 2 },
+    "jonathan": { "alive": true, "location": "asylum", "knows": ["the count's castle", "the count is a monster", "what he saw in transylvania"], "disposition_to_player": 2 },
+    "van_helsing": { "alive": true, "location": "harker_room", "knows": ["lucy became a vampire", "dracula is in england", "mina is in danger"], "disposition_to_player": 2 },
+    "dracula": { "alive": true, "location": "graveyard", "knows": ["mina's blood calls to him", "the hunters destroyed lucy"], "disposition_to_player": -2 },
+    "lucy": { "alive": false, "location": "graveyard", "knows": [], "disposition_to_player": 0 },
+    "seward": { "alive": true, "location": "asylum", "knows": ["lucy's death", "renfield serves a master"], "disposition_to_player": 1 }
+  },
+  "locations": {
+    "harker_room": "The Harkers' bedroom at Dr Seward's asylum: canopied bed, oak panelling, candlelight, a heavy door, a casement window over the grounds.",
+    "castle_hall": "The great hall of Castle Dracula: cold stone, iron-bound doors, torchlight, dust of centuries.",
+    "whitby_cliff": "The cliff at Whitby: ruined abbey above, grey sea below, gravestones leaning in the wind.",
+    "asylum": "Dr Seward's asylum: gaslit corridors, barred windows, distant cries of patients.",
+    "graveyard": "A London churchyard at night: yew trees, leaning headstones, the Westenra tomb."
+  },
+  "forks": [
+    {
+      "id": "A",
+      "title": "Refuse the door",
+      "trigger_hint": "Mina tells Van Helsing no and keeps the door shut",
+      "dawn_description": "She is pale, the window open, two marks on her neck; Van Helsing outside, grim.",
+      "dawn_clip_prompt": "First-person POV waking in a Victorian bedroom at cold grey dawn, 1897. The casement window hangs open, lace curtains soaked and stirring; the candle is burned out. Looking down: a woman's pale trembling hands. In a silver hand-mirror on the quilt, two small red puncture marks on a pale neck. Slow tilt up to the doorway where an older white-haired man stands grim and silent, hat in hand. A distant church bell tolls, raw wind gusts through the open window, one long floorboard creak."
+    },
+    {
+      "id": "B",
+      "title": "Invite the Count in",
+      "trigger_hint": "Mina invites Dracula (the Count) in, not Van Helsing",
+      "dawn_description": "The room is empty, the bed unslept in, a bat's shadow on the wall; Jonathan waking alone.",
+      "dawn_clip_prompt": "First-person POV of a man stepping into an empty Victorian bedroom at dawn, 1897. The bed is made and unslept in, a crucifix lies face-down on the floorboards, the window open to a bruised orange sky. On the whitewashed wall the shadow of a great bat slides across and vanishes. Handheld step forward toward the empty bed. A man's voice cracks, S1: \"Mina? MINA!\" Then only wind through the window, and far off, a single wolf howl."
+    },
+    {
+      "id": "C",
+      "title": "Tell the truth early",
+      "trigger_hint": "Mina tells Van Helsing about her dreams before he asks",
+      "dawn_description": "She wakes safe, the room fortified, Van Helsing asleep in a chair.",
+      "dawn_clip_prompt": "First-person POV waking safe in a Victorian bedroom at golden dawn, 1897. Ropes of garlic flowers ring the closed casement window, a small crucifix is nailed above the headboard, wax seals dot the door frame. In an armchair beside the bed an older white-haired man sleeps upright, a leather book open on his chest. Gentle pan from the bright window to the chair. Birdsong outside, coals settling in the grate, his slow steady snoring."
+    }
+  ]
+}

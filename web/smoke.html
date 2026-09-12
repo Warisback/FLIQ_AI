@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UNDERSTUDY smoke test — fast-h3</title>
+<style>
+  body { margin: 0; padding: 16px; background: #101014; color: #ddd; font: 13px/1.5 Consolas, monospace; }
+  video { width: 672px; height: 384px; background: #000; display: block; margin-bottom: 10px; }
+  button { font: inherit; padding: 8px 14px; margin-right: 8px; cursor: pointer; }
+  #log { white-space: pre-wrap; background: #16161c; padding: 10px; max-height: 45vh; overflow-y: auto; }
+  .check { margin: 10px 0; }
+  h1 { font-size: 16px; }
+</style>
+</head>
+<body>
+  <h1>Phase 1 smoke test — reactor/fast-h3</h1>
+  <video id="video" autoplay playsinline></video>
+  <div>
+    <button id="run">Run smoke test</button>
+    <button id="run-frame">Run with starting_frame</button>
+    <button id="close">Close session</button>
+  </div>
+  <div class="check">
+    Record the verdict (Phase 1 decision at 14:30):
+    <label><input type="checkbox" id="c-video"> video plays</label>
+    <label><input type="checkbox" id="c-audio"> audio plays</label>
+    <label><input type="checkbox" id="c-speech"> spoken line intelligible</label>
+    → if speech fails, set <code>DIALOGUE_IN_CLIP=false</code> in .env (TTS fallback)
+  </div>
+  <pre id="log"></pre>
+  <script src="/smoke.bundle.js"></script>
+</body>
+</html>
