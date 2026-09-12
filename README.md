@@ -56,9 +56,14 @@ opening clip → suggested-line turn → chained clip → impact panel → clean
   subtitle → typed turn → next clip chained via `continue_from_clip_id` (same room, same
   character — the chaining really does hold continuity) → state panel shows deviations/flags.
 - **Cache parachute** ✅ each played clip auto-records to `cache/<hash>.webm` (~1.8MB per 8s).
-- **Phases 2 & 4 live** ⏳ wired and unit-shape-tested, blocked on LLM credit: the DeepSeek
-  account returns `402 Insufficient Balance` — top up at platform.deepseek.com, or set
-  `ANTHROPIC_API_KEY`. (The 402 proves auth + wiring are correct.)
+- **Phases 2 & 4 live** ✅ on **Gemini** (`gemini-3.5-flash`, thinking disabled): 3-turn
+  continuity passes (Van Helsing remembers the refusal, flags + deviations recorded),
+  turns **3.8–4.2s**; a predicted-branch hit returns in **~0.8s** (`type=branch`); skip to
+  dawn after refusing the door produces the Fork-A consequence live ("what is that terrible
+  mark upon your throat?") with the causal deviation in state. ⚠️ Free-tier quota is
+  per-minute: back-to-back turns can 429 (server fails fast, client falls back to cache;
+  the window clears in ~60s). For judging, enable billing on the Google key or pace turns.
+  DeepSeek stays wired but its account has no balance (`402`).
 
 - **`/`** — the app. Pick a character, the opening beat plays, talk with the mic or the box.
 - **`/smoke.html`** — Phase 1 smoke test: connect → enqueue one Dracula clip with a spoken
@@ -81,9 +86,12 @@ docs, per §1 "verify against the live pages":
 | TTS API | Browser `speechSynthesis` | Zero keys, zero latency budget; only used if `DIALOGUE_IN_CLIP=false` |
 | Cache `<hash>.mp4` from generation | Browser records each played clip (MediaRecorder on the WebRTC stream) → `cache/<sha1(prompt)>.webm` | Clips arrive as live tracks, not files; recording playback is the simplest capture point. Alternative if MediaRecorder disappoints: the SDK's `requestRecording()` + `downloadClipAsFile()` (server-side HLS recorder → MP4 blob), which needs the model's recorder enabled |
 
-Director LLM: **`claude-haiku-4-5`** (plan §4 Phase 2: "fastest capable LLM"; turn target <4s)
-when an Anthropic key is present — structured outputs, cached system prompt. **`deepseek-chat`**
-otherwise (JSON mode + fence-strip + zod validation + retry-once). Override with `DIRECTOR_MODEL`.
+Director LLM providers (auto-pick: Anthropic → DeepSeek → Gemini; force with
+`DIRECTOR_PROVIDER`): **`claude-haiku-4-5`** (structured outputs, cached system prompt),
+**`deepseek-chat`** (JSON mode), **`gemini-3.5-flash`** (JSON mime type +
+`thinkingBudget: 0` — thinking on costs ~10s/turn, off is ~4s). All non-Anthropic paths
+validate with zod and retry once, except quota/billing errors which fail fast so the
+client's cache fallback kicks in. Override the model with `DIRECTOR_MODEL`.
 
 One packaging gotcha, already fixed: the Reactor SDK loads a wasm core at runtime relative to
 the bundle URL, so it can't be inlined — the bundle is ESM with `./wasm/reactor_wasm.js` left

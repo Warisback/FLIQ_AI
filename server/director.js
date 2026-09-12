@@ -15,9 +15,15 @@ import { z } from "zod";
 const PROVIDER = process.env.DIRECTOR_PROVIDER
   || (process.env.ANTHROPIC_API_KEY ? "anthropic"
     : process.env.DEEPSEEK_API_KEY ? "deepseek"
+    : process.env.GEMINI_API_KEY ? "gemini"
     : "anthropic"); // last resort: the Anthropic SDK can still find an `ant auth` profile
-const MODEL = process.env.DIRECTOR_MODEL ||
-  (PROVIDER === "anthropic" ? "claude-haiku-4-5" : "deepseek-chat");
+const DEFAULT_MODELS = {
+  anthropic: "claude-haiku-4-5",
+  deepseek: "deepseek-chat",
+  gemini: "gemini-3.5-flash", // pinned from the key's live ListModels, 12 Sept 2026
+  mock: "mock",
+};
+const MODEL = process.env.DIRECTOR_MODEL || DEFAULT_MODELS[PROVIDER];
 console.log(`[director] provider=${PROVIDER} model=${MODEL}`);
 
 // ---------- shared schemas ----------
@@ -188,6 +194,65 @@ function normalizeTurn(out) {
   };
 }
 
+// ---------- Gemini path ----------
+// generateContent with responseMimeType json; shape enforced via the same
+// prompt block as DeepSeek, validated with zod, retried once by callDirector.
+// Gemini flash models think by default (~10s/turn measured) — a zero thinking
+// budget brings turns under the plan's 4s target. If the model rejects the
+// field, we drop it for the rest of the process and eat the latency.
+let geminiThinkingOff = true;
+async function geminiJson(userMessage, maxTokens, systemText) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
+  try {
+    const request = () => fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": process.env.GEMINI_API_KEY,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemText }] },
+          contents: [{ role: "user", parts: [{ text: userMessage }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            // On thinking models this cap includes thinking tokens — keep it roomy
+            // or the visible JSON gets starved.
+            maxOutputTokens: maxTokens,
+            temperature: 1.0,
+            ...(geminiThinkingOff ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          },
+        }),
+      },
+    );
+    let res = await request();
+    if (res.status === 400 && geminiThinkingOff) {
+      const text = await res.text();
+      if (/thinking/i.test(text)) {
+        console.error("[director] gemini rejected thinkingBudget:0 — retrying with thinking on");
+        geminiThinkingOff = false;
+        res = await request();
+      } else {
+        throw new Error(`Gemini 400: ${text.slice(0, 300)}`);
+      }
+    }
+    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const body = await res.json();
+    const cand = body.candidates?.[0];
+    if (!cand?.content?.parts?.length) {
+      throw new Error(`Gemini returned no content (finishReason: ${cand?.finishReason ?? body.promptFeedback?.blockReason ?? "?"})`);
+    }
+    let text = cand.content.parts.map((p) => p.text ?? "").join("");
+    text = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "");
+    return JSON.parse(text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---------- mock path (pipeline testing only) ----------
 let mockTurn = 0;
 const MOCK_BEATS = [
@@ -217,7 +282,9 @@ async function callDirector(userMessage) {
     const msg = extra ? `${userMessage}\n\n${extra}` : userMessage;
     const raw = PROVIDER === "deepseek"
       ? await deepseekJson(msg, 1400)
-      : await anthropicParse(AnthropicTurnSchema, msg, 2000);
+      : PROVIDER === "gemini"
+        ? await geminiJson(msg, 4000, SYSTEM_PROMPT + DEEPSEEK_FORMAT)
+        : await anthropicParse(AnthropicTurnSchema, msg, 2000);
     const checked = TurnSchema.safeParse(raw);
     if (!checked.success) throw new Error(`bad shape: ${checked.error.issues[0]?.message} at ${checked.error.issues[0]?.path?.join(".")}`);
     return normalizeTurn(checked.data);
@@ -225,6 +292,9 @@ async function callDirector(userMessage) {
   try {
     return await attempt();
   } catch (err) {
+    // Quota/billing errors won't fix themselves on retry — fail fast so the
+    // client can fall back to cache instead of doubling the burn.
+    if (/\b(402|429)\b|Insufficient Balance|quota/i.test(err.message)) throw err;
     // Plan §2: retry once on parse failure with the error appended.
     console.error(`[director] first attempt failed: ${err.message} — retrying once`);
     return attempt(`Your previous response failed with: ${err.message}. Respond again, valid JSON only, exactly the specified shape.`);
@@ -262,7 +332,15 @@ export async function matchBranch(playerLine, branches) {
   const prompt = `A player in an interactive Dracula story just said: "${playerLine}"\n\nPredicted moves:\n${list}\n\nReturn JSON {"match_index": n} — the index whose trigger this line clearly matches, or -1 if none match. Be strict: partial or ambiguous matches are -1.`;
 
   let idx;
-  if (PROVIDER === "deepseek") {
+  if (PROVIDER === "gemini") {
+    try {
+      const out = await geminiJson(prompt, 1500, "You match player lines to predicted moves. Answer with JSON only.");
+      idx = out.match_index;
+    } catch (err) {
+      console.error(`[branch-match] gemini failed: ${err.message}`);
+      idx = -1;
+    }
+  } else if (PROVIDER === "deepseek") {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
