@@ -50,12 +50,46 @@ let recorder = null,
 let idleTimer = null;
 let clipPlaying = false;
 
-// The stage shows exactly one thing: a cached clip, a live clip, or the
-// scene artwork. Never the live stream's black between-clips frames.
+// The stage shows exactly one thing: a cached clip, a live clip, or — between
+// turns — the FROZEN LAST FRAME of the previous clip (falls back to the scene
+// artwork before anything has played). Never the live stream's black frames.
+let hasFreezeFrame = false;
 function updateStage() {
   const cachedShowing = ui.cachedVideo.style.display === "block";
   ui.liveVideo.style.visibility = clipPlaying && !cachedShowing ? "visible" : "hidden";
-  $("still-label").hidden = clipPlaying || cachedShowing;
+  $("still-label").hidden = clipPlaying || cachedShowing || hasFreezeFrame;
+}
+
+// Snapshot the playing video every 400ms; freeze onto the artwork <img> using
+// the PREVIOUS grab, so a black boundary frame at clip end never wins.
+let frameTimer = null, lastGrab = null, prevGrab = null;
+const grabCanvas = document.createElement("canvas");
+function startFrameCapture(videoEl) {
+  stopFrameCapture();
+  frameTimer = setInterval(() => {
+    if (!videoEl.videoWidth) return;
+    try {
+      grabCanvas.width = videoEl.videoWidth;
+      grabCanvas.height = videoEl.videoHeight;
+      grabCanvas.getContext("2d").drawImage(videoEl, 0, 0);
+      prevGrab = lastGrab;
+      lastGrab = grabCanvas.toDataURL("image/jpeg", 0.85);
+    } catch {}
+  }, 400);
+}
+function stopFrameCapture() {
+  clearInterval(frameTimer);
+  frameTimer = null;
+}
+function freezeStage() {
+  const frame = prevGrab || lastGrab;
+  if (!frame) return;
+  document.querySelector(".stage-art").src = frame;
+  hasFreezeFrame = true;
+  prevGrab = lastGrab = null;
+}
+function promptToSpeak() {
+  if (!busy) note("The scene holds — speak, or type your next line, to continue the story.");
 }
 let busy = false;
 let connectingPromise = null;
@@ -124,13 +158,17 @@ async function openSession() {
       startRecording(data.clip.clip_id);
       clipPlaying = true;
       updateStage();
+      startFrameCapture(ui.liveVideo);
     }
     // Clips flowing = the demo is in active use; don't idle-close mid-scene.
     if (type === "clip_queued" || type === "clip_generated" || type === "clip_started") touchIdle();
     if (type === "clip_finished" || type === "clip_stopped") {
       stopRecording();
+      stopFrameCapture();
+      freezeStage();
       clipPlaying = false;
       updateStage();
+      promptToSpeak();
       // Fullscreen hides the input controls — drop back out when the clip
       // ends so the player can actually say their next line.
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -266,10 +304,15 @@ async function cacheHas(hash) {
 function playCached(hash, npcLine) {
   ui.cachedVideo.src = `/api/cache/${hash}`;
   ui.cachedVideo.style.display = "block";
-  ui.cachedVideo.onended = hideCached;
+  startFrameCapture(ui.cachedVideo);
+  ui.cachedVideo.onended = () => {
+    stopFrameCapture();
+    freezeStage();
+    hideCached();
+    promptToSpeak();
+  };
   ui.cachedVideo.play().catch(() => note("click the video to play"));
   updateStage();
-  note("replaying from cache");
   log(`cache replay ${hash.slice(0, 8)}…`);
 }
 
