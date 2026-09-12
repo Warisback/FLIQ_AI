@@ -1,41 +1,48 @@
 // The Director: one LLM call per player turn. Returns the NPC line, a FastH3
 // clip prompt, a state patch, and up to 2 speculative branches.
 //
-// Structured outputs (client.messages.parse + zodOutputFormat) guarantee valid
-// JSON — no fence-stripping needed. state_patch travels as a JSON *string*
-// because structured-output schemas can't express open-ended objects.
+// Two providers, first key found wins:
+// - Anthropic: structured outputs (client.messages.parse + zodOutputFormat) —
+//   valid JSON guaranteed. state_patch travels as a JSON string because
+//   structured-output schemas can't express open-ended objects.
+// - DeepSeek: OpenAI-compatible REST, JSON mode (response_format json_object),
+//   fence-strip + zod validation + retry once (plan §2 as written).
 
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
-const client = new Anthropic();
-const MODEL = process.env.DIRECTOR_MODEL || "claude-haiku-4-5";
+// DIRECTOR_PROVIDER=mock gives canned beats — tests the clip pipeline with zero
+// LLM credit. Never use it in front of a judge.
+const PROVIDER = process.env.DIRECTOR_PROVIDER
+  || (process.env.ANTHROPIC_API_KEY ? "anthropic"
+    : process.env.DEEPSEEK_API_KEY ? "deepseek"
+    : "anthropic"); // last resort: the Anthropic SDK can still find an `ant auth` profile
+const MODEL = process.env.DIRECTOR_MODEL ||
+  (PROVIDER === "anthropic" ? "claude-haiku-4-5" : "deepseek-chat");
+console.log(`[director] provider=${PROVIDER} model=${MODEL}`);
 
+// ---------- shared schemas ----------
+// DeepSeek returns state_patch as a plain object; Anthropic as a JSON string.
+const patchField = z.union([z.string(), z.record(z.string(), z.any())]);
 const BranchSchema = z.object({
   trigger: z.string(),
   npc_line: z.string(),
   npc_speaker: z.string(),
   clip_prompt: z.string(),
-  state_patch_json: z.string(),
+  state_patch: patchField.optional(),
+  state_patch_json: z.string().optional(),
 });
-
 const TurnSchema = z.object({
   npc_line: z.string(),
   npc_speaker: z.string(),
   clip_prompt: z.string(),
-  state_patch_json: z.string(),
-  branches: z.array(BranchSchema),
-});
-
-const MatchSchema = z.object({
-  match_index: z.number(),
+  state_patch: patchField.optional(),
+  state_patch_json: z.string().optional(),
+  branches: z.array(BranchSchema).nullish(),
 });
 
 // Plan §5, adapted for FastH3 (verified against docs.reactor.inc):
 // - FastH3 takes no reference images, so the "Picture N" rule is replaced by
 //   FastH3's own prompt contract: every prompt re-establishes the full scene.
-// - state_patch is returned as a JSON string (structured-output constraint).
 // - `deviations` in a patch means NEW deviations to append, not the full list.
 const SYSTEM_PROMPT = `You are the Director of an interactive, first-person retelling of Bram Stoker's Dracula (1897).
 The player IS one character and speaks as them. You control every other character and the world.
@@ -53,12 +60,25 @@ Rules:
    is heard (concrete sounds, not moods). 40-80 words, hard cap 700 characters. If
    dialogue_in_clip is true, include the NPC line as spoken dialogue in double quotes with a
    speaker tag (e.g. S1); otherwise describe ambient sound only and NO speech.
-6. \`state_patch_json\` is a JSON object as a string, containing only the fields that changed.
-   Any \`deviations\` array in it lists only NEW deviations to append. Update \`flags\` (e.g.
-   door_opened, invited_dracula_in, told_van_helsing), \`time\`, \`location\`, and character
-   fields (\`knows\`, \`disposition_to_player\`) as consequences demand.
+6. The state patch contains only the fields that changed. Any \`deviations\` array in it lists
+   only NEW deviations to append. Update \`flags\` (e.g. door_opened, invited_dracula_in,
+   told_van_helsing), \`time\`, \`location\`, and character fields (\`knows\`,
+   \`disposition_to_player\`) as consequences demand.
 7. Optionally predict the two most likely next player moves as \`branches\` (0-2). Each trigger
    is a short description of what the player would say or do.`;
+
+// DeepSeek has no schema enforcement — the shape rides in the system prompt.
+const DEEPSEEK_FORMAT = `
+
+Respond with ONLY this JSON, no preamble, no code fences:
+{
+  "npc_line": string,
+  "npc_speaker": string,
+  "clip_prompt": string,
+  "state_patch": object,
+  "branches": [ { "trigger": string, "npc_line": string, "npc_speaker": string,
+                  "clip_prompt": string, "state_patch": object } ]  // 0-2, may be []
+}`;
 
 function buildContext(state, storyPack, dialogueInClip) {
   const { pending_branches, ...visibleState } = state;
@@ -76,52 +96,142 @@ function buildContext(state, storyPack, dialogueInClip) {
   ].join("\n");
 }
 
-async function callDirector(userMessage) {
-  const request = (extra) => client.messages.parse({
-    model: MODEL,
-    max_tokens: 2000,
-    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: extra ? `${userMessage}\n\n${extra}` : userMessage }],
-    output_config: { format: zodOutputFormat(TurnSchema) },
-  });
-
-  let response;
-  try {
-    response = await request();
-    if (!response.parsed_output) throw new Error("Director returned unparseable output");
-  } catch (err) {
-    // Plan §2: retry once on parse failure with the error appended.
-    console.error(`[director] first attempt failed: ${err.message} — retrying once`);
-    response = await request(`Your previous response failed with: ${err.message}. Respond again, valid JSON only.`);
-    if (!response.parsed_output) throw new Error(`Director failed twice: ${err.message}`);
+// ---------- Anthropic path ----------
+let anthropicClient = null;
+async function anthropicParse(schemaShape, userMessage, maxTokens) {
+  if (!anthropicClient) {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    anthropicClient = new Anthropic();
   }
-
-  const out = response.parsed_output;
-  return {
-    npc_line: out.npc_line,
-    npc_speaker: out.npc_speaker,
-    clip_prompt: out.clip_prompt.slice(0, 790), // FastH3 rejects >800 chars outright
-    state_patch: safeParse(out.state_patch_json),
-    branches: (out.branches || []).slice(0, 2).map((b) => ({
-      trigger: b.trigger,
-      npc_line: b.npc_line,
-      npc_speaker: b.npc_speaker,
-      clip_prompt: b.clip_prompt.slice(0, 790),
-      state_patch: safeParse(b.state_patch_json),
-    })),
-  };
+  const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
+  const response = await anthropicClient.messages.parse({
+    model: MODEL,
+    max_tokens: maxTokens,
+    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: userMessage }],
+    output_config: { format: zodOutputFormat(schemaShape) },
+  });
+  if (!response.parsed_output) throw new Error("unparseable structured output");
+  return response.parsed_output;
 }
 
-function safeParse(json) {
+// Anthropic structured outputs can't do open objects → JSON-string patch fields.
+const AnthropicBranchSchema = z.object({
+  trigger: z.string(), npc_line: z.string(), npc_speaker: z.string(),
+  clip_prompt: z.string(), state_patch_json: z.string(),
+});
+const AnthropicTurnSchema = z.object({
+  npc_line: z.string(), npc_speaker: z.string(), clip_prompt: z.string(),
+  state_patch_json: z.string(), branches: z.array(AnthropicBranchSchema),
+});
+
+// ---------- DeepSeek path ----------
+async function deepseekJson(userMessage, maxTokens, extraSystem = "") {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
   try {
-    const v = JSON.parse(json);
+    const res = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: maxTokens,
+        temperature: 1.0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT + DEEPSEEK_FORMAT + extraSystem },
+          { role: "user", content: userMessage },
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const body = await res.json();
+    let text = body.choices?.[0]?.message?.content ?? "";
+    text = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, ""); // plan §2: strip fences
+    return JSON.parse(text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------- normalization ----------
+function normalizePatch(obj) {
+  const raw = obj?.state_patch_json ?? obj?.state_patch;
+  if (raw == null) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    const v = JSON.parse(raw);
     return v && typeof v === "object" ? v : {};
   } catch {
-    console.error(`[director] bad state_patch_json ignored: ${json?.slice(0, 120)}`);
+    console.error(`[director] bad state patch ignored: ${String(raw).slice(0, 120)}`);
     return {};
   }
 }
 
+function normalizeTurn(out) {
+  return {
+    npc_line: out.npc_line ?? "",
+    npc_speaker: out.npc_speaker ?? "",
+    clip_prompt: (out.clip_prompt ?? "").slice(0, 790), // FastH3 rejects >800 chars outright
+    state_patch: normalizePatch(out),
+    branches: (out.branches ?? []).slice(0, 2).map((b) => ({
+      trigger: b.trigger,
+      npc_line: b.npc_line,
+      npc_speaker: b.npc_speaker,
+      clip_prompt: (b.clip_prompt ?? "").slice(0, 790),
+      state_patch: normalizePatch(b),
+    })),
+  };
+}
+
+// ---------- mock path (pipeline testing only) ----------
+let mockTurn = 0;
+const MOCK_BEATS = [
+  {
+    npc_line: "Then I shall wait, Madam Mina. But the night is not your friend.",
+    npc_speaker: "van_helsing",
+    clip_prompt: "First-person POV of a young woman standing before a heavy closed oak door in a candlelit Victorian bedroom, 1897: dark panelling, moonlight through lace curtains, her hand resting against the bolt, refusing to draw it. Slow push-in on the door. A muffled older man's voice through the wood, S1: \"Then I shall wait, Madam Mina. But the night is not your friend.\" Retreating footsteps on floorboards, wind rattling the casement, the candle flame sputtering.",
+    state_patch: { flags: { door_opened: false }, deviations: ["Mina refused to let Van Helsing in"] },
+    branches: [],
+  },
+  {
+    npc_line: "You heard something at the window? Bolt it. Do not look at what looks back.",
+    npc_speaker: "van_helsing",
+    clip_prompt: "First-person POV of a young woman in a candlelit Victorian bedroom at night, 1897, turning from a heavy closed door toward a casement window where lace curtains stir though the window seems shut. Handheld slow turn. A muffled older man's voice through the door, S1: \"You heard something at the window? Bolt it. Do not look at what looks back.\" A soft scratching on glass, wind, a floorboard creak.",
+    state_patch: { flags: { noise_at_window: true } },
+    branches: [],
+  },
+];
+function mockDirector() {
+  const beat = MOCK_BEATS[Math.min(mockTurn++, MOCK_BEATS.length - 1)];
+  return structuredClone(beat);
+}
+
+async function callDirector(userMessage) {
+  if (PROVIDER === "mock") return mockDirector();
+  const attempt = async (extra) => {
+    const msg = extra ? `${userMessage}\n\n${extra}` : userMessage;
+    const raw = PROVIDER === "deepseek"
+      ? await deepseekJson(msg, 1400)
+      : await anthropicParse(AnthropicTurnSchema, msg, 2000);
+    const checked = TurnSchema.safeParse(raw);
+    if (!checked.success) throw new Error(`bad shape: ${checked.error.issues[0]?.message} at ${checked.error.issues[0]?.path?.join(".")}`);
+    return normalizeTurn(checked.data);
+  };
+  try {
+    return await attempt();
+  } catch (err) {
+    // Plan §2: retry once on parse failure with the error appended.
+    console.error(`[director] first attempt failed: ${err.message} — retrying once`);
+    return attempt(`Your previous response failed with: ${err.message}. Respond again, valid JSON only, exactly the specified shape.`);
+  }
+}
+
+// ---------- public API ----------
 export async function directorTurn(state, storyPack, playerLine, dialogueInClip) {
   const user = [
     buildContext(state, storyPack, dialogueInClip),
@@ -144,17 +254,44 @@ export async function directorSkip(state, storyPack, timeTarget, dialogueInClip)
 }
 
 // Fast, tiny call: does the player's line match one of the speculative branches?
+const MatchSchema = z.object({ match_index: z.number() });
+
 export async function matchBranch(playerLine, branches) {
+  if (PROVIDER === "mock") return -1;
   const list = branches.map((b, i) => `${i}: ${b.trigger}`).join("\n");
-  const response = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 100,
-    messages: [{
-      role: "user",
-      content: `A player in an interactive Dracula story just said: "${playerLine}"\n\nPredicted moves:\n${list}\n\nReturn match_index: the index whose trigger this line clearly matches, or -1 if none match. Be strict: partial or ambiguous matches are -1.`,
-    }],
-    output_config: { format: zodOutputFormat(MatchSchema) },
-  });
-  const idx = response.parsed_output?.match_index;
+  const prompt = `A player in an interactive Dracula story just said: "${playerLine}"\n\nPredicted moves:\n${list}\n\nReturn JSON {"match_index": n} — the index whose trigger this line clearly matches, or -1 if none match. Be strict: partial or ambiguous matches are -1.`;
+
+  let idx;
+  if (PROVIDER === "deepseek") {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: MODEL, max_tokens: 50, temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!res.ok) throw new Error(`DeepSeek ${res.status}`);
+      const body = await res.json();
+      idx = JSON.parse(body.choices?.[0]?.message?.content ?? "{}").match_index;
+    } finally { clearTimeout(timer); }
+  } else {
+    if (!anthropicClient) {
+      const { default: Anthropic } = await import("@anthropic-ai/sdk");
+      anthropicClient = new Anthropic();
+    }
+    const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
+    const response = await anthropicClient.messages.parse({
+      model: MODEL, max_tokens: 100,
+      messages: [{ role: "user", content: prompt }],
+      output_config: { format: zodOutputFormat(MatchSchema) },
+    });
+    idx = response.parsed_output?.match_index;
+  }
   return Number.isInteger(idx) && idx >= 0 && idx < branches.length ? idx : -1;
 }
