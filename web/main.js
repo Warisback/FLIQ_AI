@@ -131,6 +131,9 @@ async function openSession() {
       stopRecording();
       clipPlaying = false;
       updateStage();
+      // Fullscreen hides the input controls — drop back out when the clip
+      // ends so the player can actually say their next line.
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     }
     if (type === "clip_failed" && data?.clip?.clip_id) {
       log(`CLIP FAILED: ${data.clip.clip_id}`);
