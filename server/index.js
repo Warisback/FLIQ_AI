@@ -36,10 +36,10 @@ const storyPack = loadStoryPack();
 let state = initialState(storyPack);
 
 // ---- Reactor token exchange (API key never leaves the server) ----
-let tokenCache = null; // { jwt, expires_at }
+// No caching: each token allows a limited number of sessions ("Session limit
+// reached for this token" 403s once it's spent), so every connect gets a
+// fresh token with a fresh allowance.
 async function reactorToken() {
-  const now = Math.floor(Date.now() / 1000);
-  if (tokenCache && tokenCache.expires_at - now > 120) return tokenCache;
   const key = process.env.REACTOR_API_KEY;
   if (!key) throw new Error("REACTOR_API_KEY is not set in .env");
   const res = await fetch("https://api.reactor.inc/tokens", {
@@ -55,8 +55,7 @@ async function reactorToken() {
     }),
   });
   if (!res.ok) throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
-  tokenCache = await res.json();
-  return tokenCache;
+  return res.json();
 }
 
 // ---- turn / skip / branch logic ----
